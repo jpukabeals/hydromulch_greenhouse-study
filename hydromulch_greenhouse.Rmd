@@ -1,0 +1,430 @@
+---
+title: "hydromulch-greenhouse"
+author: "Jpukabeals"
+date: "7/5/2022"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,
+                      message = FALSE,
+                      warning = FALSE)
+
+# this code will automatically install the needed packages
+if (!require("pacman"))
+  install.packages("pacman")
+pacman::p_load(
+  tidyverse,
+  lme4,
+  multcomp,
+  multcompView,
+  googlesheets4,
+  googledrive,
+  lubridate,
+  rstatix,
+  #for is_outlier/is_extreme
+  plotrix,
+  #for std.error
+  knitr,
+  #for kable function
+  drc
+)
+options(scipen = 999)
+options(digits = 2)
+```
+
+```{r import, include=FALSE, cache=TRUE}
+
+dat.res<-read.csv("resistance.runall.csv")
+
+dat.emerg<- read.csv("emerg.runall.csv")
+
+# driveurl<-"https://docs.google.com/spreadsheets/d/1AZJBCdsEjDg2RqNckbHzh9ePkX3dXNtTh1_llMT2l2k/edit#gid=0"
+#  
+# dat.res<-read_sheet(driveurl, gs4_auth())
+# 
+# driveurl.2<-"https://docs.google.com/spreadsheets/d/1MSTe9n7sHF9IDK0P-ANJkAtcTTa1-SvusItsbApSIJA/edit#gid=0"
+# 
+# dat.emerg<-read_sheet(driveurl.2)
+# 
+# rm(driveurl, driveurl.2)
+```
+
+```{r aesthetics}
+cbp <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
+
+theme_set(theme_bw())
+```
+
+```{r resistance dataset adjustments}
+dat.res <- dat.res %>%
+  mutate_if(is.character, as.factor) %>%
+  mutate_at("rate", as.factor) %>%
+  mutate_at("rep", as.factor) %>%
+  mutate_at("subsample", as.factor)
+# str(dat.res)
+# glimpse(dat.res)
+```
+
+*metadata for resistance dataset*  
+run=experimental run  
+rate.L=rate of hydromulch in liters per meter square  
+mPa= peak resistance in mPa  
+subsample=each hydromulch square was sampled 3 times for peak resistance  
+rep=replicate, but since it was a CRD, these do not correspond to any blocking
+
+```{r emergence dataset adjustments}
+dat.emerg <- dat.emerg %>%
+  mutate_if(is.character, as.factor) %>%
+  mutate_at("rate", as.factor) %>%
+  mutate_at("rep", as.factor)
+
+dat.emerg %>% 
+  str()
+```
+
+*metadata for emergence dataset*  
+count=number of seeds observed at end of experimental run
+count.m2=count on a meter square basis
+seed=number of seeds planted in the plot
+cum.emerg= % of seeds that emerged through the hydromulch
+
+
+# RUN ALL CODE ABOVE
+
+```{r}
+
+```
+
+
+# outlier inspection
+
+```{r outlier inspection}
+# outliers are only meaningful within a species and rate
+
+library(lattice)
+
+## dat.emerg
+bwplot(cum.emerg ~ factor(rate.L) | run, dat.emerg)
+bwplot(cum.emerg ~ factor(rate.L) | species, dat.emerg)
+# it seems those two oat data points at 3.2L are extreme
+
+dat.emerg %>%
+  rowid_to_column() %>%
+  filter(rate.L > 3 & rate.L < 4) %>%
+  filter(species == "oat") %>%
+  mutate(extreme = is_extreme(.$cum.emerg),
+         out = is_outlier(.$cum.emerg)) %>%
+  dplyr::select(rowid, out, extreme, cum.emerg, rate.L, species) %>%
+  arrange(desc(out)) %>%
+  head()
+# even though they appear to be outliers, they are not extreme points (see ?is_extreme)
+
+
+## dat.res
+bwplot(mPa ~ factor(rate.L) | run, dat.res)
+bwplot(mPa ~ factor(rate.L) | rep, dat.res)
+bwplot(mPa ~ factor(rate.L) | subsample, dat.res)
+# no big outliers
+
+
+```
+
+No extreme points were identified, dataset remains unchanged
+
+# summary stats
+
+```{r emergence summary stats}
+## all
+dat.emerg %>%
+  group_by(rate.L) %>%
+  summarise(m = mean(cum.emerg),
+            se = std.error(cum.emerg))
+
+# making object of summary output
+t1 <- dat.emerg %>%
+  group_by(rate.L) %>%
+  summarise(
+    avg.cum.emerg = mean(cum.emerg),
+    se = std.error(cum.emerg),
+    n = n()
+  )
+# writing csv that can be copy and pasted from R console in MS word, then use 'text to columns' to turn into a table
+write.csv(sapply(t1, function(x)
+  round(x, digits = 1)),
+  row.names = F)
+
+## by species
+
+dat.emerg %>%
+  group_by(rate.L, species) %>%
+  summarise(avg.cum.emerg = mean(cum.emerg),
+            se = std.error(cum.emerg))
+
+t1 <- dat.emerg %>%
+  group_by(rate.L, species) %>%
+  summarise(
+    avg.cum.emerg = mean(cum.emerg),
+    se = std.error(cum.emerg),
+    n = n()
+  )
+
+write.csv(sapply(t1[, -2], #needed to remove column with species names as it cannot be rounded
+                 function(x)
+                   round(x, digits = 1)),
+          row.names = F) 
+
+```
+
+
+```{r resistance summary statistics}
+## all
+dat.res %>%
+  group_by(rate.L) %>%
+  summarise(avg.dat.res = mean(mPa),
+            se = std.error(mPa),
+            sd = sd(mPa))
+
+t1 <- dat.res %>%
+  group_by(rate.L) %>%
+  summarise(
+    avg.dat.res = mean(mPa),
+    se = std.error(mPa),
+    sd = sd(mPa),
+    n = n()
+  )
+
+write.csv(sapply(t1,
+                 function(x)
+                   round(x, digits = 2)),
+          row.names = F)
+```
+
+# emergence
+
+## visualize
+
+Let's see what type of function fits the data best
+
+```{r}
+
+dat.emerg %>%
+  ggplot(aes(y = cum.emerg,
+             x = rate.L)) +
+  geom_point() +
+  geom_smooth(method = "lm",
+              se = F,
+              color = "dodgerblue3") +
+  geom_smooth(
+    method = "lm",
+    formula = y ~ poly(x, 2),
+    se = F,
+    color = "red"
+  ) +
+  geom_smooth(method = "loess",
+              se = F,
+              color = "green") +
+  stat_smooth(
+    method = "drm",
+    method.args = list(fct = LL.4(
+  names = c("hill", "min_value", "max_value", "ec_50")
+    )),
+    se = FALSE,
+    color = "purple"
+  )
+  
+```
+
+the purple line fits best, which is the 4 parameter dose response curve
+
+## dose-response model exploration
+
+How many parameters? 
+We know the minimum emergence is zero 
+We do NOT know the maximum emergence (d-parameter; max asymptope)
+We do NOT know the ED50/EC50/LD50 (e parameters; effective dose when 50% of weeds show no emergence)
+We do NOT know the slope (b parameter)
+
+3-parameter is most meaningful because we know the minimum emergence is 0, so we define the lower asymptompe. 
+
+We use the log-logistic function. It uses the same parameters as the logistic function (see hill equation). 
+More specifically...
+c parameter is the lower asymptope
+d parameter is the upper asymptope
+e parameter is the X-axis value at the inflection point
+b parameter is the slope of the curve at the inflection point
+see paper 'Gadagkar and Call 2015'
+
+
+Here is the equation
+
+LL.3== `Y=c+d−c1+(Xe)−b`
+
+Weibull2==`Y=c+(d−c){1−exp{−exp[b(log(X)−log(e))]}}`
+
+Note that simply because Weibull2 is more complex, we will just use the log logistic as it's just as good and simpler.
+see https://www.statforbiology.com/2020/stat_nls_usefulfunctions/#weibull-function-type-2
+
+
+
+```{r}
+dat.emerg %>%
+  mutate(species=fct_recode(species,
+                        "Barnyardgrass" = "barnyardgrass",
+                        "Oat" = "oat",
+                        "Pea" = "pea")) %>% 
+  # distinct(species)
+  ggplot(aes(y = cum.emerg,
+             x = rate.L,
+             col=species)) +
+  geom_point() +
+  geom_smooth(
+    method = "drm",
+    method.args = list(
+      fct=LL.4(
+        names = c("b",
+                  "c",
+                  "d",
+                  "e")
+      )
+    ),
+    se=F
+  ) +
+  scale_color_brewer(type = "qual") +
+  theme(
+    legend.title = element_blank(),
+    legend.position = c(.7,.7)
+  ) +
+  labs(y="Cumulative emergence\n(%)",
+       x=expression("Hydromulch rate" ~ (L ~ m^{-2})))
+
+ggsave("emergence.vs.rate.png",
+       dpi=400,
+       width = 5,
+       height = 4,
+       units = "in")
+
+```
+
+# resistance
+
+
+
+```{r lm fitting}
+# we force intercept through the origin since we know there is no resistance at rate.L=0
+
+dat.res %>% 
+  # glimpse()
+  lm(mPa~0+rate.L,.) %>% 
+  summary()
+
+# mPa = rate.L*.132111
+# adjusted r2 = 88.3%
+
+```
+
+
+```{r lm figure}
+
+dat.res %>% 
+  ggplot(aes(rate.L,mPa)) +
+  stat_summary() +
+  stat_smooth(
+    method = "lm",
+    se=F
+  ) +
+  annotate(
+    geom = "text",
+    x=4,
+    y=2.5,
+    # size=5,
+    # label= expression("y=0.132x")
+    label = substitute(paste(italic('y = 0.132x')))
+  ) +
+    annotate(
+    geom = "text",
+    x=4,
+    y=2.2,
+    # size=5,
+    # label= expression("y=0.132x")
+    label = substitute(paste(italic('r2 = 0.88')))
+  )
+
+```
+
+
+```{r final figures}
+
+dat.emerg %>%
+  mutate(species=fct_recode(species,
+                        "Barnyardgrass" = "barnyardgrass",
+                        "Oat" = "oat",
+                        "Pea" = "pea")) %>% 
+  # distinct(species)
+  ggplot(aes(y = cum.emerg,
+             x = rate.L,
+             col=species)) +
+  geom_point() +
+  geom_smooth(
+    method = "drm",
+    method.args = list(
+      fct=LL.4(
+        names = c("b",
+                  "c",
+                  "d",
+                  "e")
+      )
+    ),
+    se=F
+  ) +
+  scale_color_brewer(type = "qual") +
+  theme(
+    legend.title = element_blank(),
+    legend.position = c(.7,.7)
+  ) +
+  labs(y="Emergence (%)",
+       x=expression("Hydromulch rate" ~ (L ~ m^{-2}))) -> gg.emerg
+
+dat.res %>% 
+  ggplot(aes(rate.L,mPa)) +
+  stat_summary(
+    fun.data = mean_se
+    ) +
+  stat_smooth(
+    method = "lm",
+    se=F,
+    formula = y~0+x,
+    col = cbp[1]
+  ) +
+  geom_text(
+    aes(x=4,y=2,
+        # label = substitute(paste(italic('y = 0.132x'))))
+        label = "y = 0.132x\n r2 = 0.88"
+  )) +
+  labs(y="Resistance (mPa)",
+       x="") -> gg.res
+
+# library(ggpubr)
+ggpubr::ggarrange(
+  gg.res,gg.emerg,
+  ncol = 1,
+  align = "v"
+)
+
+ggsave(
+  "fig1.png",
+  width = 4,
+  height = 6,
+  units = "in",
+  dpi=500
+)
+
+
+```
+
+
+
+
+

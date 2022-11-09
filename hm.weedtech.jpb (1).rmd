@@ -1,0 +1,1557 @@
+---
+title: "Hydromulch Rate Greenhouse Experiment"
+author: "Jesse Puka-Beals and Greta Gramig"
+date: '`r format(Sys.Date(), "%m %d %Y")`'
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+# story
+paper mulches reduce weed emergence  
+we hypothesize that different application rates of mulch result in differing levels of weed control
+we hypothesize that peak resistance from a mulch is a mode of action for weed control
+we can quantify weed emergence at different application rates (table 1)
+we can quantify peak resistance at different application rates (table 1)
+we therefore quantify the weed emergence at different peak resistances (table 1)
+we also discovered that peak resistance and application rate have a strong linear relationship. We therefore felt confident that we could predict the peak resistance of any application rate OR predict what application rate would be required to achieve a certain peak resistance (figure 1)
+since we quantified resistance at each application rate and discovered a strong linear relationship between application rates, we felt we could substitute peak resistance with application rate on the x-axis, and then predict weed emergence as a function of peak resistance from hydromulch, which we were able to best model as a dose-response (figure 2)
+Here are the model parameters and what they mean (table 2)
+we think it's interesting that the 3 different seeds we used all responded similarly to peak resistance
+we think it's noteworthy that mulch strength has a linear relationship with application rate, and by extension, the weed emergence we observed can be a function of peak resistance, which appears to us a likely mode of action of any mulches control of weed emergence. Through this data, we therefore think it'd be valuable for research that examines weed control of mulches always report peak resistance, as it helps quanitify what makes that mulch effective
+The way peak resistance in greenhouse settings translates to field settings is much more complex; how does peak resistance change when the mulch is wet? how does the mulch degrade? These are all further questions. 
+we think this data can be useful to the tailoring of certain mulches to certain situations
+
+
+# to do
+need to understand the drc summary outputs
+Add in entire dataset even though we are only going to present 3 species.
+see Ritz et al 2015
+
+# setup
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
+
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(tidyverse, lsmeans, lme4, multcomp, 
+               multcompView, googlesheets4, googledrive, 
+               lubridate, reshape2, drc,ggpubr,rstatix)
+
+options(scipen=999)
+options(digits=2)
+theme_set(theme_bw)
+```
+
+```{r import, include=FALSE, cache=TRUE}
+
+homedir <- "C:/Users/Jesse/Downloads"
+workdir <- "C:/Users/pukab001/Downloads"
+
+setwd(workdir)
+dat.res<-read.csv("resistance.runall - Sheet1.csv")
+dat.emerg<- read.csv("emerg.runall - Sheet1.csv")
+
+
+# driveurl<-"https://docs.google.com/spreadsheets/d/1AZJBCdsEjDg2RqNckbHzh9ePkX3dXNtTh1_llMT2l2k/edit#gid=0"
+#  
+# dat.res<-read_sheet(driveurl, gs4_auth())
+# 
+# driveurl.2<-"https://docs.google.com/spreadsheets/d/1MSTe9n7sHF9IDK0P-ANJkAtcTTa1-SvusItsbApSIJA/edit#gid=0"
+# 
+# dat.emerg<-read_sheet(driveurl.2)
+# 
+# rm(driveurl, driveurl.2)
+```
+
+```{r aesthetics}
+cbp <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
+
+ltrs<-c("a","b","c","d","e","f","g","h")
+```
+
+```{r}
+dat.res<-dat.res%>%
+  mutate_if(is.character,as.factor) %>%
+  mutate_at("rate", as.factor) %>%
+  mutate_at("rep", as.factor) %>%
+  mutate_at("subsample", as.factor) 
+str(dat.res)
+```
+
+*metadata*  
+run=experimental run  
+rate.L=rate of hydromulch in liters per meter square  
+mPa= peak resistance in mPa  
+subsample=each hydromulch square was sampled 3 times for peak resistance  
+rep=replicate, but since it was a CRD, these do not correspond to any blocking
+
+```{r}
+dat.emerg<-dat.emerg%>%
+  mutate_if(is.character,as.factor) %>%
+  mutate_at("rate", as.factor) %>%
+  mutate_at("rep", as.factor) 
+
+str(dat.emerg)
+```
+
+# run all above
+```{r}
+
+```
+
+
+
+*metadata cont.*  
+count=number of seeds observed at end of experimental run
+count.m2=count on a meter square basis
+seed=number of seeds planted in the plot
+cum.emerg= % of seeds that emerged through the hydromulch
+
+# outliers
+
+```{r}
+library(lattice)
+##dat.emerg
+# cum.emerg, figure?
+# count.m2, table?
+# bwplot(~cum.emerg, dat.emerg)
+# bwplot(~count.m2, dat.emerg)
+# identical, hard to see outliers
+
+# outliers are only meaningful within a species and rate
+
+bwplot(cum.emerg~factor(rate.L)|run,dat.emerg)
+bwplot(cum.emerg~factor(rate.L)|species,dat.emerg)
+
+# it seems those two oat data points at 3.2L are extreme
+
+
+
+dat.emerg %>%
+  rowid_to_column() %>%
+  filter(rate.L>3 & rate.L<4) %>%
+  filter(species=="oat") %>%
+  mutate(extreme=is_extreme(.$cum.emerg),
+         out=is_outlier(.$cum.emerg)) %>%
+  dplyr::select(rowid,out,extreme,cum.emerg,rate.L,species) %>%
+  arrange(desc(out)) %>%
+  head()
+# even though they appear to be outliers, they are not extreme points (see ?is_extreme) 
+
+
+## dat.res
+bwplot(mPa~factor(rate.L)|run,dat.res)
+bwplot(mPa~factor(rate.L)|rep,dat.res)
+bwplot(mPa~factor(rate.L)|subsample,dat.res)
+# no big outliers
+
+
+```
+
+No extreme points were identified, dataset remains unchanged
+
+# summary stats
+
+```{r emergence}
+#all
+library(plotrix)
+library(knitr)
+dat.emerg %>%
+  group_by(rate.L) %>%
+  summarise(m=mean(cum.emerg),
+            se=std.error(cum.emerg))
+
+t1<- dat.emerg %>%
+  group_by(rate.L) %>%
+  summarise(avg.cum.emerg=mean(cum.emerg),
+            se=std.error(cum.emerg),
+            n=n())
+
+write.csv(sapply(t1, function(x) round(x,digits = 1)))
+kable(t1,
+      format="simple")
+
+#by species
+
+dat.emerg %>%
+  group_by(rate.L,species) %>%
+  summarise(avg.cum.emerg=mean(cum.emerg),
+            se=std.error(cum.emerg))
+
+t1<- dat.emerg %>%
+  group_by(rate.L,species) %>%
+  summarise(avg.cum.emerg=mean(cum.emerg),
+            se=std.error(cum.emerg),
+            n=n())
+
+kable(t1,
+      format = "simple")
+write.csv(sapply(t1[,-2], function(x) round(x,digits = 1))) #need to remove column with species names as it cannot be rounded
+
+```
+
+
+```{r resistance}
+#all
+dat.res %>%
+  group_by(rate.L) %>%
+  summarise(avg.dat.res=mean(mPa),
+            se=std.error(mPa),
+            sd=sd(mPa))
+
+t1<- dat.res %>%
+  group_by(rate.L) %>%
+  summarise(avg.dat.res=mean(mPa),
+            se=std.error(mPa),
+            sd=sd(mPa),
+            n=n())
+
+kable(t1,
+      format="simple")
+
+write.csv(sapply(t1, function(x) round(x,digits=2)))
+```
+
+# generic analysis
+y~x, this is most of what we do. 
+What is the relationship between a response variable we observed and a treatment variable that we applied. 
+decision tree: 
+y=continuous, x=continuous => regression (lm,glm)
+y=continuous, x=categorical => anova (lm,glm)
+y=categorical, x=continuous/categorical => (glm with binomial, neg binomial or poisson)
+
+hypothesis testing: does a response differ depending on the treatments applied? Is this difference consistent across all levels of a different treatment or are interactions present? This is typically done with ANOVA
+modeling: 
+
+identify the questions being asked
+identify the dependent and independent  variables
+identify how the independent variables are arranged...is the random effect of block nested within site?
+create a global model of all fixed and random effects of interest in order to detect if any interactions occur among the independent varaibles. 
+determine if the response variables are in a meaningful unit 
+use boxplots or rstatix to determine if outliers exist
+create a global model that's an lmer
+identify the distribution of the response variables 
+visualize the relationship between the response variables and the independent variables of interest--is it linear, sigmoidal/logistic/binomial, poisson, quadratic, bimodal.(create alternative models to global model)
+does the data meet the assumptions of an lm or glm? distribution, variance, independence? If not, can the data be transformed or can certain points that are outliers for leverage be removed to create a better fit? (create more alternative models)
+compare models through anova, AIC, their psuedo r2, the error. Reject models that are significantly worse, but these comparisons don't tell you the best models just which ones are definately bad. 
+Look at the conclusions of the models, do they really differ among eachother? If so, do any conclusions from the models differ?
+
+
+# emergence
+
+```{r}
+dat.emerg %>%
+  ggplot(aes(rate.L,cum.emerg)) +
+  geom_point() +
+  stat_smooth(se=F) +
+  # stat_smooth(method = "lm",
+  #             formula = y~poly(x,2),
+  #             se=F,
+  #             col="red") +
+  # stat_smooth(method = "lm",
+  #             formula = y~poly(x,2)*x,
+  #             se=F,
+  #             col="purple") +
+  stat_smooth(method = "lm",
+              formula = y~poly(x,3)*x,
+              se=F,
+              col="orange") + #orange looks best
+  stat_smooth(method = "lm",
+              formula = y~I(x^-1)*x,
+              col="black",
+              se=F) +
+  stat_smooth(
+    method = "drm",
+    method.args = list(
+      fct = LL.4(names = c("hill", "min_value",
+                          "max_value", "ec_50"))
+      ),
+    se = F,
+    col="pink"
+    )
+  
+
+```
+
+
+
+```{r emergence interaction testing}
+densityplot(dat.emerg$cum.emerg)
+#transform?
+densityplot(log(dat.emerg$cum.emerg)+10)
+densityplot(sqrt(dat.emerg$cum.emerg))
+
+dat.emerg %>%
+  # mutate(cum.emerg=log(cum.emerg+10)) %>%
+  ggplot(aes(rate.L,cum.emerg)) +
+  geom_point() +
+  geom_smooth(method='loess')
+
+dat.emerg %>%
+  slice(-c(44,113,25,26,27,96,94))%>%
+  mutate(lg=log(cum.emerg+10),
+         binom=(cum.emerg-min(cum.emerg))/(max(cum.emerg)-min(cum.emerg)),
+         logbin=(lg-min(lg))/(max(lg)-min(lg))) %>%
+  glm(lg~rate.L*species*run,
+      data = .,
+      family = stats::gaussian(link="log")) %>%
+  # summary() %>%
+  # plot() %>%  
+  car::influencePlot() #%>%
+  # car::outlierTest()
+
+
+
+
+#model for species
+##linear for baseline
+AIC(lmer(cum.emerg~rate.L*species +
+                  (1|run),
+              data=dat.emerg,
+             REML = F))
+AIC(lmer(sqrt(cum.emerg)~rate.L*species +
+                  (1|run),
+              data=dat.emerg,
+             REML = F))
+AIC(glmer(cum.emerg~rate.L*species +
+                  (1|run),
+              data=dat.emerg,
+              # na.action=na.omit,
+              family =  poisson(link="log")))
+# AIC(glmer(sqrt(cum.emerg)~rate.L*species +
+#                   (1|run),
+#               data=dat.emerg,
+#               # na.action=na.omit,
+#               family = poisson(link="log")))
+AIC(glmer((cum.emerg)~rate.L*species +
+                  (1|run),
+              data=dat.emerg,
+              # na.action=na.omit,
+              family = poisson(link="identity")))
+
+## best model based on AIC
+plot(lmer(sqrt(cum.emerg)~rate.L*species +
+                  (1|run),
+              data=dat.emerg,
+             REML = T))
+coef(lmer(sqrt(cum.emerg)~rate.L*species +
+                  (1|run),
+              data=dat.emerg,
+             REML = T))
+summary(lmer(sqrt(cum.emerg)~rate.L*species +
+                  (1|run),
+              data=dat.emerg,
+             REML = T))
+Anova(lmer(sqrt(cum.emerg)~rate.L*species +
+                  (1|run),
+              data=dat.emerg,
+             REML = T))
+## no interaction between rate and species, nor effect from species
+
+#model for experimental run
+##linear for baseline
+AIC(lmer(cum.emerg~rate.L*run +
+                  (1|species),
+              data=dat.emerg,
+             REML = F))
+AIC(lmer(sqrt(cum.emerg)~rate.L*run +
+                  (1|species),
+              data=dat.emerg,
+             REML = F))
+
+AIC(lm(sqrt(cum.emerg)~rate.L*run,
+              data=dat.emerg))
+
+AIC(glmer(cum.emerg~rate.L*run +
+                  (1|species),
+              data=dat.emerg,
+              # na.action=na.omit,
+              family = poisson(link="log")))
+# AIC(glmer(sqrt(cum.emerg)~rate.L*species +
+#                   (1|run),
+#               data=dat.emerg,
+#               # na.action=na.omit,
+#               family = poisson(link="log")))
+# AIC(glmer((cum.emerg)~rate.L*run +
+#                   (1|species),
+#               data=dat.emerg,
+#               # na.action=na.omit,
+#               family = poisson(link="identity")))
+
+summary(lm(sqrt(cum.emerg)~rate.L*run,
+              data=dat.emerg))
+
+anova(lm(sqrt(cum.emerg)~rate.L*run,
+              data=dat.emerg))
+
+anova(lm(sqrt(cum.emerg)~rate.L*run*species,
+              data=dat.emerg))
+##it seems the effect of rate.L may have varied between runs.
+## we aren't really interested in the effect of run. 
+
+performance::r2(lm(sqrt(cum.emerg)~rate.L*run,
+              data=dat.emerg))
+
+performance::r2(lm(sqrt(cum.emerg)~rate.L*run*species,
+              data=dat.emerg))
+
+
+```
+
+
+## visualize
+
+Let's see what type of model fits the data
+
+```{r}
+
+dat.emerg %>%
+  ggplot(aes(y=cum.emerg,
+             x=rate.L)) +
+  geom_point() +
+  geom_smooth(method="lm",
+              se=F,
+              color="dodgerblue3") +
+  geom_smooth(method="lm",
+              formula = y~poly(x,2),
+              se=F,
+              color="red") +
+  geom_smooth(method = "loess",
+              se=F,
+              color="green") +
+  stat_smooth(
+    method = "drm",
+    method.args = list(fct = LL.4(names = c("hill", 
+                                            "min_value", "max_value", "ec_50"))),
+    se = FALSE,
+    color="purple")
+  
+```
+
+seems that we might need a dose response, but I wrote code for linear analysis just because I'm more familiar with this type of analysis. 
+
+## LINEAR rate*species
+Forget linear analysis, go to non-linear
+
+```{r, eval=F}
+summary(lmer(cum.emerg~rate.L*species +
+          (1|run),
+          data=dat.emerg,
+          REML=FALSE))
+
+e.r.1 <- lmer(cum.emerg~rate.L*species +
+          (1|run),
+          data=dat.emerg,
+          REML=TRUE)
+
+plot(e.r.1)
+car::Anova(e.r.1)
+anova(e.r.1)
+coef(e.r.1)
+fixef(e.r.1)
+#interp
+# byg: cum.emerg reduces 3.5% per L m-2
+# oat: cum.emerg reduces 1.1% per L m-2
+# pea: cum.emerg reduces 0,71% per L m-2
+
+dat.emerg %>%
+  ggplot(aes(rate.L,cum.emerg,
+             group=species,
+             color=species)) +
+  geom_point() +
+  geom_smooth(method="lm",
+              se=F)
+# basic lm shows that oat reduces cum.emerg fastest and byg the slowest
+
+```
+
+```{r all, eval=F}
+e.rb.1 <- lmer(cum.emerg~rate +
+          (1|run),
+          data=dat.emerg,
+          REML=TRUE)
+car::Anova(e.rb.1)
+cld(emmeans(e.rb.1, ~rate))
+
+```
+
+```{r barnyardgrass, eval=F}
+e.rb.1 <- lmer(cum.emerg~rate +
+          (1|run),
+          data=subset(dat.emerg,species="barnyardgrass"),
+          REML=TRUE)
+car::Anova(e.rb.1)
+cld(emmeans(e.rb.1, ~rate))
+```
+
+```{r oat, eval=F}
+e.ro.1 <- lmer(cum.emerg~rate +
+          (1|run),
+          data=subset(dat.emerg,species="oat"),
+          REML=TRUE)
+car::Anova(e.ro.1)
+cld(emmeans(e.ro.1, ~rate))
+```
+
+```{r pea, eval=F}
+e.rp.1 <- lmer(cum.emerg~rate +
+          (1|run),
+          data=subset(dat.emerg,species="pea"),
+          REML=TRUE)
+car::Anova(e.rp.1)
+cld(emmeans(e.rp.1, ~rate))
+```
+
+### tidy
+
+```{r, eval=T}
+e.r.tidy <- dat.emerg %>%
+  group_by(species, rate) %>%
+  summarise(n=n(), mean=mean(cum.emerg), 
+            se=sd(cum.emerg)/sqrt(n)) %>%
+  as.data.frame() %>%
+  mutate(tukey = c("a","b","c","c","c","c","a","b","c","c","c","c","a","b","c","c","c","c"))
+e.r.tidy
+
+e.r.tidy.1 <- dat.emerg %>%
+  group_by(species, rate) %>%
+  summarise(n=n(), mean=mean(cum.emerg), 
+            se=sd(cum.emerg)/sqrt(n)) %>%
+  as.data.frame() %>%
+  mutate(tukey = c("a","b","c","c","c","c","a","b","c","c","c","c","a","b","c","c","c","c"))
+
+e.r.tidy.2 <- dat.emerg %>%
+  group_by(species, rate.L) %>%
+  summarise(n=n(), mean=mean(cum.emerg), 
+            se=sd(cum.emerg)/sqrt(n)) %>%
+  as.data.frame() %>%
+  mutate(Species=recode(species,
+                        barnyardgrass="Barnyardgrass",
+                        oat="Oat",
+                        pea="Pea"))
+e.r.tidy.2
+
+e.r.tidy.1b <- dat.emerg %>%
+  mutate(rate.Lf = rate.L) %>%
+  as.data.frame() %>%
+  
+  
+  group_by(species, rate) %>%
+  summarise(n=n(), mean=mean(cum.emerg), 
+            se=sd(cum.emerg)/sqrt(n)) %>%
+  as.data.frame() %>%
+  mutate(tukey = c("a","b","c","c","c","c","a","b","c","c","c","c","a","b","c","c","c","c"))
+```
+
+
+### figure
+
+```{r line graph, eval=F}
+fig.1.2 <- ggplot(e.r.tidy.1, 
+       aes(x=rate,
+           group=species,
+           color=species,
+           y=mean)) +
+  geom_point(aes(shape=species),
+             # position = position_dodge(0.19),
+             size=2,
+             show.legend = F) +
+  geom_errorbar(aes(ymin=mean-se, ymax=mean+se), 
+                width=.2,
+                alpha=.5,
+                size=1,
+                # position=position_dodge(0.19),
+                show.legend = F) +
+  geom_path() +
+  theme_classic() +
+  labs(y="Cumulative Emergence (%)",
+       x="Application Rate (X = 12.7 L m-2)") +       
+  scale_color_manual(name="Species",
+                    values=cbp[6:8], labels=c("Barnyardgrass", "Oat", "Pea"),
+                    guide=guide_legend()) +
+  scale_y_continuous(expand = c(0, 0), 
+                     limits = c(0, 100));fig.1.2
+```
+
+
+```{r bar graph, eval=F}
+emergence <- ggplot(e.r.tidy, aes(x=species,
+                                  fill=rate,
+                                  y=mean)) +
+  geom_errorbar(aes(ymin=mean-se, ymax=mean+se), 
+                width=0.3,
+                alpha=1,
+                size=1,
+                position = position_dodge(.5))+
+  geom_bar(stat = "identity", width=0.3, 
+           position = position_dodge(.5)) +
+  geom_text(aes(label=tukey,
+                y=mean+se),
+            position = position_dodge(.5),
+            vjust=-.4,
+            size=8) +
+  scale_y_continuous(expand = c(0, 0), 
+                     limits = c(0, 100)) + #adjust for y-axis range 
+  theme_classic() +
+  labs(y="Cumulative emergence (%)",
+       x="",
+       title="")+
+  scale_fill_manual(name="Application Rate (L m2)",
+                    values=cbp, labels=c("0", "3.2", "6.3", "9","13", "19"),
+                    guide=guide_legend())+
+  theme(legend.position = c(.5, .5),
+    legend.justification = c("left", "top"));emergence
+
+```
+
+
+## NON-LINEAR rate*species
+
+```{r graph in base R}
+library(drc)
+ll.3nl <- drm(cum.emerg ~ rate.L,
+                curveid=species,
+                data = dat.emerg, fct = LL.3()) 
+summary(ll.3nl)
+
+plot(ll.3nl, broken = F, type = "all", 
+     xlab = "HM rate (L m-2)", 
+     xlim = c(0, 20), 
+     ylab = "Cumulative emergence of weeds")
+
+plot(ll.3nl, broken = F, 
+     xlab = "HM rate (L m-2)", 
+     xlim = c(0, 20), 
+     ylab = "Cumulative emergence of weeds")
+```
+
+### model exploration
+
+see https://www.statforbiology.com/2020/stat_nls_usefulfunctions/#weibull-function-type-2
+
+
+```{r}
+# ?drm
+# getMeanFunctions()
+getMeanFunctions(3) #want 3 parameter with lower limit at 0
+
+plot(drm(cum.emerg ~ rate.L,
+         curveid=species,
+         data = dat.emerg, fct = LL.3()))
+
+
+# plot(drm(cum.emerg ~ rate.L,
+#          curveid=species,
+#          data = dat.emerg, fct = W1.3()))
+
+plot(drm(cum.emerg ~ rate.L,
+         curveid=species,
+         data = dat.emerg, fct = W2.3()))  #good
+
+# plot(drm(cum.emerg ~ rate.L,
+#          curveid=species,
+#          data = dat.emerg, fct = LL2.3()))
+
+# plot(drm(cum.emerg ~ rate.L,
+#          curveid=species,
+#          data = dat.emerg, fct = AR.3()))
+
+# plot(drm(cum.emerg ~ rate.L,
+#          curveid=species,
+#          data = dat.emerg, fct = MM.3()))
+
+
+# W2.3 and LL.3 are best
+w2.3nl <- drm(cum.emerg ~ rate.L,
+         curveid=species,
+         data = dat.emerg, fct = W2.3());plot(w2.3nl)
+
+ll.3nl <- drm(cum.emerg ~ rate.L,
+         curveid=species,
+         data = dat.emerg, fct = LL.3());plot(ll.3nl)
+
+
+
+anova(ll.3nl,w2.3nl)
+AIC(ll.3nl,w2.3nl)
+# unclear which is better
+
+summary(w2.3nl)
+summary(ll.3nl)
+# both have same conclusions for differences among parameter estimates
+# appears species differ in d and e parameter, justification for NOT pooling across species
+
+```
+
+Three parameter functions are preferable because we know the minimum emergence is 0, but we do not know the max emergence, nor the EC50/LD50/ED50. So we want to solve for the max emergence (d parameter), the ED50 (e parameter), and the slope (b parameter). S
+We use the log-logistic function. It uses the same parameters as the logistic function (see hill equation). 
+More specifically...
+c parameter is the lower asymptope
+d parameter is the upper asymptope
+e parameter is the X-axis value at the inflection point
+b parameter is the slope of the curve at the inflection point
+see paper 'Gadagkar and Call 2015'
+
+Here is the equation
+
+LL.3== `Y=c+d−c1+(Xe)−b`
+
+Weibull2==`Y=c+(d−c){1−exp{−exp[b(log(X)−log(e))]}}`
+
+Note that simply because Weibull2 is more complex, we will just use the log logistic as it's just as good and simpler.
+
+```{r extraction options from models, eval=F}
+# summary works best!
+coef(ll.3nl)
+coef(ll.3nl)[1:3]
+
+fitted(ll.3nl)
+hatvalues(ll.3nl)
+```
+
+```{r thinking outloud, eval=F}
+# In my experience with fitting the log logistic curves, the difference in the numbers for the LL family depend on the number of parameters you would like to fix. In general, i like to use fct = LL.4 (fixed = c(NA, NA, NA, NA)) so i can define which parameters to fix. based on your type of data, this will help you to figure out too which parameters you may or may not want to fix. E.g. for an enzyme inhibition assay i would use LL.2 simply because we can assume the max activity is 1 and max inhibition will be 0. However, in the case where i know my compounds will not completely reduce activity to 0, I would use fct = LL.4 (fixed = c(NA, NA, 1, NA)) to specify that i fix my max to 1 but not necessarily my lowest expected will be 0.
+# ^^ above rationale makes sense. For this study, LL.2 makes sense because we can assume maxiumum germination is 100% and minimum is 0% HOWEVER
+# an argument can be made that LL.4 (fixed = c(NA, NA, 100, 0)) <- assuming this means max is 100 and min is 0.
+#
+
+# List of all possible fct options. I think LL is log-logistic and W is Weibull
+#  fctList <- list(LL.2(), LL.3(), LL.3u(), LL.4(), LL.5(), 
+#             W1.2(), W1.3(), W1.4(), W2.2(), W2.3(), W2.4(), BC.4(), 
+#             BC.5(), LL2.2(), LL2.3(), LL2.3u(), LL2.4(), LL2.5(), 
+#             AR.2(), AR.3(), MM.2(), MM.3())
+
+
+mLL.2 <- drm(cum.emerg ~ rate.L, data = dat.emerg, fct = LL.2()) 
+plot(mLL.2)
+mLL.3 <- drm(cum.emerg ~ rate.L, data = dat.emerg, fct = LL.3()) 
+plot(mLL.3)
+mLL.4 <- drm(cum.emerg ~ rate.L, data = dat.emerg, fct = LL.4()) 
+plot(mLL.4)
+mLL.5 <- drm(cum.emerg ~ rate.L, data = dat.emerg, fct = LL.4()) 
+plot(mLL.5) 
+# models improve in fit up until LL.4, then there's no further improvement in fit
+
+
+mW2.4 <- drm(cum.emerg ~ rate.L, data = dat.emerg, fct = W2.4()) 
+plot(mW2.4)
+#this weibull 2.4 or 2.3 appears to provide an incredible fit, but unsure how it works
+
+mLL.4.fixed <- drm(cum.emerg ~ rate.L, data = dat.emerg, fct = LL.4 (fixed = c(NA, 0, NA, NA)))  #the model curve cannot go below 0
+plot(mLL.4.fixed)
+
+summary(mLL.4)
+summary(mW2.4)
+summary(mLL.4.fixed)
+
+#b = the Hill coefficient (SLOPE, the higher this value, the more rapid emergence decreases at increasing rates of HM)
+#c = min_value (LOWER LIMIT, the minimum amount of emergence possible)
+# d = max_value (UPPER LIMIT, the maximum amount of emergence possible)
+# e = EC50 (the x value where y response is halfway between the max of y and the min of y response)
+```
+
+```{r remove high rate?, eval=F}
+length(unique(dat.emerg$rate.L))
+xtabs(~rate.L+species, data = dat.emerg)
+# should 19.05 rate be removed? few data points
+```
+
+```{r,eval=F}
+# remove high HM rate and assume 100% emergence at 0 rate
+nrow(dat.emerg)
+nrow(subset(dat.emerg, rate != "1.5"))
+emerg.nl.4 <- drm(cum.emerg ~ rate.L, 
+                  species, data=subset(dat.emerg, rate != "1.5"), 
+                  fct = LL.3(), 
+                  pmodels=list(~species-1, ~species-1, ~species-1, ~species-1)) 
+plot(emerg.nl.4,
+     log = "", #removes log scale
+     xlab = "Hydromulch Rate",
+     ylab = "Cumulative emergence")
+
+summary(emerg.nl.4)
+# summary(glht(emerg.nl.3))
+
+EDcomp(emerg.nl.4, c(50, 50), interval = "delta")
+# ^ there isn't a difference among species in their rate of decline from HM
+```
+
+```{r, eval=F}
+plot(drm(cum.emerg ~ rate.L, species, data=subset(dat.emerg, rate != "1.5"), 
+         fct = LL.4((fixed = c(NA, 0, 100, NA))), 
+                     pmodels=list(~species-1, ~species-1, ~species-1, ~species-1)) )
+
+plot(drm(cum.emerg ~ rate.L, species, data=subset(dat.emerg, rate != "1.5"), 
+         fct = LL.4((fixed = c(NA, 0, NA, NA))), 
+                     pmodels=list(~species-1, ~species-1, ~species-1, ~species-1)) )
+
+```
+
+### final model
+
+```{r old weird model I don't understand, eval=F}
+emerg.nl.3 <- drm(cum.emerg ~ rate.L, 
+                  species, 
+                  data=dat.emerg, 
+                  fct = LL.3(), 
+                  pmodels=list(~species-1, ~species-1, ~1, ~species-1)) 
+# not sure what pmodels does
+
+plot(emerg.nl.3,
+     log = "", #removes log scale
+     xlab = "Hydromulch Rate",
+     ylab = "Cumulative emergence")
+
+plot(emerg.nl.species,
+     log = "", #removes log scale
+     xlab = "Hydromulch Rate",
+     ylab = "Cumulative emergence")
+
+
+summary(emerg.nl.3)
+
+EDcomp(emerg.nl.3, c(50, 50), interval = "delta")
+# ^ there isn't a difference among species in their rate of decline from HM
+
+```
+
+
+```{r}
+summary(ll.3nl)
+```
+
+b parameter: the slopes for barnyardgrass, oat and pea are all very similar (between 3.2 and 3.5) 
+e: refers to the rate of hydromulch where's it's expected that 50% of the total effect of the hydromulch has taken place. The coefficients from this model suggest that oats required more hydromulch to suppress 50% (2.3L) whereas barnyardgrass required less hydromulch (2.08L). 
+There are significant differences among the e parameters, but it's unclear how to go about mean seperation
+
+One obvious way would be to simply use the standard error of the mean as a proxy for a  least-significant-difference and then you'd say
+2.319-.466=1.9
+2.169+.648=2.8
+2.169-.648=1.5
+2.078+1.09=3.2
+which would result in the conclusion that there is no difference among the means of those parameters
+
+Another option would be to create a dataframe of all the raw parameter estimates (that are summarized as the mean and standard errors when you call summary on the drc object). Then run an anova on that dataset. 
+
+
+
+```{r}
+# mean comparison among parameters
+```
+
+```{r slicing by species}
+# need to slice for creating extrap data for ggplot
+ll.3.nl.oat <- drm(cum.emerg ~ rate.L,
+                   data = subset(dat.emerg, species=="oat"), 
+                   fct = LL.3()) 
+summary(ll.3.nl.oat)
+# same as coefficients from ll.3nl
+
+ll.3.nl.byg <- drm(cum.emerg ~ rate.L, 
+                   data = subset(dat.emerg, species=="barnyardgrass"), fct = LL.3()) 
+# summary(ll.3.nl.byg)
+
+ll.3.nl.pea <- drm(cum.emerg ~ rate.L, 
+                   data = subset(dat.emerg, species=="pea"),
+                   fct = LL.3()) 
+# summary(ll.3.nl.pea)
+
+```
+
+
+```{r extrap data}
+# here we add in more potential HM application rates so that our model has x values to predict y values from
+extrap.data <- expand.grid(rate=exp(seq(log(0.1), 
+                                        log(20),
+                                        length=100))) 
+#above we made a list of 100 possible rates between 0.5 and 20
+# predictions and confidence intervals 
+extrap.predict <- predict(ll.3nl,
+                          newdata=extrap.data,
+                          interval="confidence") 
+
+# new data with predictions 
+extrap.data$p <- extrap.predict[,1]
+extrap.data$pmin <- extrap.predict[,2]
+extrap.data$pmax <- extrap.predict[,3]
+
+# barnyardgrass
+extrap.data.byg <- expand.grid(rate=exp(seq(log(0.1), log(20), length=100))) 
+
+extrap.predict.byg <- predict(ll.3.nl.byg, newdata=extrap.data.byg,
+                              interval="confidence",
+                              level = 0.95)
+
+extrap.data.byg$p <- extrap.predict.byg[,1]
+extrap.data.byg$pmin <- extrap.predict.byg[,2]
+extrap.data.byg$pmax <- extrap.predict.byg[,3]
+
+# oat
+extrap.data.oat <- expand.grid(rate=exp(seq(log(0.1),
+                                            log(20),
+                                            length=100))) 
+
+extrap.predict.oat <- predict(ll.3.nl.oat,
+                              newdata=extrap.data.oat,
+                              interval="confidence",
+                              level = 0.95)
+
+extrap.data.oat$p <- extrap.predict.oat[,1]
+extrap.data.oat$pmin <- extrap.predict.oat[,2]
+extrap.data.oat$pmax <- extrap.predict.oat[,3]
+
+# pea
+extrap.data.pea <- expand.grid(rate=exp(seq(log(0.1),
+                                            log(20),
+                                            length=100))) 
+
+extrap.predict.pea <- predict(ll.3.nl.pea,
+                              newdata=extrap.data.pea,
+                              interval="confidence", 
+                              level = 0.95)
+
+extrap.data.pea$p <- extrap.predict.pea[,1]
+extrap.data.pea$pmin <- extrap.predict.pea[,2]
+extrap.data.pea$pmax <- extrap.predict.pea[,3]
+
+# combine
+extrap.data.byg$species<-"barnyardgrass";extrap.data.byg
+extrap.data.oat$species<-"oat"
+extrap.data.pea$species<-"pea"
+extrap.all<-rbind(extrap.data.byg,
+                 extrap.data.oat,
+                 extrap.data.pea)
+
+```
+
+### figure
+```{r graphs with confidence intervals}
+library(ggplot2)
+# need to shift conc == 0 a bit up, otherwise there may be problems with coord_trans 
+# dat.emerg$rate.L0 <- dat.emerg$rate.L
+# dat.emerg$rate.L0[dat.emerg$rate.L0 == 0] <- 0.1 
+
+ggplot(dat.emerg, aes(x = rate.L, y = cum.emerg)) +
+  geom_point() +
+  geom_ribbon(data=extrap.data, aes(x=rate, 
+                                    y=p,
+                                    ymin=pmin,
+                                    ymax=pmax),
+              alpha=0.2) +
+  geom_line(data=extrap.data, aes(x=rate, y=p)) +
+  xlab("HM rate (L m-2)") + ylab("Emergence") +
+  facet_wrap(~species, ncol = 3) +
+  theme_bw()
+
+## change all estimates of negative emergence to zero for geom_ribbon
+for (i in 1:length(extrap.data.byg$rate)) {
+  ifelse(extrap.data.byg[i,3]<=0,
+         extrap.data.byg[i,3]<-0,
+         extrap.data.byg[i,3]<-extrap.data.byg[i,3])
+}
+for (i in 1:length(extrap.data.oat$rate)) {
+  ifelse(extrap.data.oat[i,3]<=0,
+         extrap.data.oat[i,3]<-0,
+         extrap.data.oat[i,3]<-extrap.data.oat[i,3])
+}
+for (i in 1:length(extrap.data.pea$rate)) {
+  ifelse(extrap.data.pea[i,3]<=0,
+         extrap.data.pea[i,3]<-0,
+         extrap.data.pea[i,3]<-extrap.data.pea[i,3])
+}
+
+ggplot(dat.emerg, aes(x = rate.L,
+                      y = cum.emerg)) +
+  geom_point(aes(group=species,
+                 color=species,
+                 shape=species)) + 
+  geom_line(data=extrap.data.byg, 
+            aes(x=rate, y=p),
+            color=cbp[1]) + 
+  geom_line(data=extrap.data.oat, 
+            aes(x=rate, y=p),
+            color=cbp[2]) + 
+  geom_line(data=extrap.data.pea, 
+            aes(x=rate, y=p),
+            color=cbp[3])+
+  geom_ribbon(data=extrap.data.byg, 
+              aes(x=rate, 
+                  y=p,
+                  ymin=pmin,
+                  ymax=pmax),
+              alpha=0.1,
+              fill=cbp[1]) +
+  geom_ribbon(data=extrap.data.pea, 
+              aes(x=rate, 
+                  y=p,
+                  ymin=pmin,
+                  ymax=pmax),
+              alpha=0.1,
+              fill=cbp[3]) +
+  geom_ribbon(data=extrap.data.oat, 
+              aes(x=rate, 
+                  y=p,
+                  ymin=pmin,
+                  ymax=pmax),
+              alpha=0.1,
+              fill=cbp[2]) +
+  labs(x="Hydromulch rate (L m-2)",
+       y="Emergence (%)") +
+  theme(legend.title = element_blank(),
+        legend.position = c(.7,.7)) +
+  scale_shape_discrete(labels = c("Barnyardgrass","Oat","Pea")) +
+  scale_color_manual(values=cbp,
+                     labels = c("Barnyardgrass","Oat","Pea"))
+ggsave("emerg.rate.LL3.png",dpi=350)
+
+```
+
+
+```{r zoomed in graph}
+
+dat.emerg %>%
+  ggplot(aes(x = rate.L,
+                      y = cum.emerg)) +
+  geom_point(aes(group=species,
+                 color=species,
+                 shape=species)) + 
+  geom_line(data=extrap.data.byg, 
+            aes(x=rate, y=p),
+            color=cbp[1]) + 
+  geom_line(data=extrap.data.oat, 
+            aes(x=rate, y=p),
+            color=cbp[2]) + 
+  geom_line(data=extrap.data.pea, 
+            aes(x=rate, y=p),
+            color=cbp[3])+
+  labs(x="Hydromulch rate (L m-2)",
+       y="Emergence (%)") +
+  theme(legend.title = element_blank(),
+        legend.position = c(.7,.7)) +
+  scale_shape_discrete(labels = c("Barnyardgrass","Oat","Pea")) +
+  scale_color_manual(values=cbp,
+                     labels = c("Barnyardgrass","Oat","Pea")) +
+  scale_x_continuous(limits = c(0,10))
+ggsave("emerg.rate.LL3.zoomed.png",dpi=350)
+
+```
+
+```{r faster figure, eval=F}
+dat.emerg %>%
+  # filter(rate.L<19)%>%
+  # filter(rate.L<10)%>%
+          ggplot( aes(x = rate.L,
+                      y = cum.emerg,
+                      group=species,
+                      color=species,
+                      shape=species,
+                      linetype=species)) +
+  geom_point() +
+  stat_smooth(
+    method = "drm",
+    method.args = list(
+      fct = LL.4(names = c("hill", "min_value", "max_value", "ec_50"))
+      ),
+    se = FALSE,
+    ) +
+  ylim(0, NA) +
+  scale_linetype_manual(values = c(1,3,4))
+
+dat.emerg %>%
+  # filter(rate.L<19)%>%
+  # filter(rate.L<10)%>%
+          ggplot( aes(x = rate.L,
+                      y = cum.emerg,
+                      group=species,
+                      color=species,
+                      shape=species,
+                      linetype=species)) +
+  geom_point() +
+  stat_smooth(
+    method = "drm",
+    method.args = list(
+      fct = L.4(names = c("hill", "min_value", "max_value", "ec_50"))
+      ),
+    se = FALSE,
+    ) +
+  ylim(0, NA) +
+  scale_linetype_manual(values = c(1,3,4))
+```
+
+# Resistance
+
+```{r resistance interaction testting}
+densityplot(dat.res$mPa)
+densityplot(log(dat.res$mPa))
+densityplot(sqrt(dat.res$mPa))
+
+anova(lm(sqrt(mPa)~rate.L*run,
+              data=dat.res)) #this could be because only run "a" has a value for hydromulch rate of 0
+anova(lm(sqrt(mPa)~rate.L*run,
+              data=subset(dat.res, rate.L>=1))) 
+
+```
+
+
+
+```{r lm model comparison}
+dat.res %>%
+  ggplot(aes(rate.L,
+             mPa)) +
+  stat_summary(geom = "pointrange",
+               fun.data = "mean_se") +
+  geom_smooth(method='loess',
+              formula = 'y~x',
+              color="red",
+              se=F)+ #loess does best
+  geom_smooth(method = "lm",
+              formula = 'y~x',
+              color="blue",
+              se=F) + #lm
+  geom_smooth(method = "lm",
+              formula = 'y~x+0',
+              color="green",
+              se=F) + #lm forced through origin
+  stat_smooth(method = "lm",
+              formula = y~poly(x,3),
+              se=F,
+              col="pink") + #3-parameter polynomial also good
+  stat_smooth(method = "drm",
+              method.args = list(
+      fct = L.4(names = c("hill", "min_value", "max_value", "ec_50"))
+      ),
+    se = FALSE,
+    col="gray")
+```
+
+```{r}
+m.linear <- lm(mPa~rate.L,dat.res)
+m.linear.origin <- lm(mPa~rate.L+0,dat.res)
+m.poly3 <- lm(formula=mPa~poly(rate.L,3,raw = T),dat.res)
+anova(m.linear,m.linear.origin,m.poly3)
+
+```
+
+
+when using loess, it automatically defaults to a log-logistic type function. 
+I am preferring forcing lm through origin vs letting it have a negative y-intercept, especially since we care more about the mPa at lower rates. 
+
+going to try model fitting at values below rate.L=10, because that's where it really matters
+
+```{r lm model comparison}
+# loess function had issues, so we are removing it
+dat.res %>%
+  filter(rate.L<=10) %>%
+  ggplot(aes(rate.L,
+             mPa)) +
+  stat_summary(geom = "pointrange",
+               fun.data = "mean_se") +
+  # geom_smooth(method='loess',
+  #             formula = 'y~x',
+  #             color="red",
+  #             se=F)+ #loess
+  geom_smooth(method = "lm",
+              formula = 'y~x',
+              color="blue",
+              se=F) + #lm
+  geom_smooth(method = "lm",
+              formula = 'y~x+0',
+              color="green",
+              se=F) +
+  stat_smooth(
+    method = "drm",
+    method.args = list(
+      fct = LL.4(fixed=c(NA,0.0462,NA,NA),
+                 names = c("hill", "min_value", "max_value", "ec_50"))),
+    se = F,
+    color="orange")  #lm forced through origin 
+```
+
+```{r fitting lm through specific y value, eval=F}
+# code from internet on forcing a specific y-intercept value on lm
+# intercept <- 0.0462
+# fit <- lm(I(mPa - intercept) ~ 0 + rate.L, dat.res)
+# summary(fit)
+# coef(fit)
+# abline(intercept, coef(fit))
+
+```
+
+
+
+##    LINEAR
+## Diagnostics
+
+```{r}
+lattice::bwplot(mPa~rate|run, dat.res)
+lattice::bwplot(mPa~rate, dat.res)
+ggplot(dat.res,
+       aes(x=mPa)) +
+  geom_density() 
+```
+
+Ok so this is practically exponential. Not sure what family or link function is most appropiate
+
+## ~rate*species
+
+```{r}
+summary(lmer(mPa~rate +
+          (1|run),
+          data=dat.res,
+          REML=FALSE))
+
+e.r.1 <- lmer(mPa~rate +
+          (1|run),
+          data=dat.res,
+          REML=TRUE)
+
+car::Anova(e.r.1)
+cld(emmeans(e.r.1, ~rate),
+    Letters = letters)
+
+```
+
+
+## tidy
+
+```{r}
+r.r.tidy <- dat.res %>%
+  group_by(rate) %>%
+  summarise(n=n(), mean=mean(mPa), 
+            se=sd(mPa)/sqrt(n)) %>%
+  as.data.frame() %>%
+  mutate(tukey = c("e","de","d","c","b","a"))
+r.r.tidy
+
+r.r.tidy.1 <- dat.res %>%
+  group_by(rate) %>%
+  summarise(n=n(), mean=mean(mPa), 
+            se=sd(mPa)/sqrt(n)) %>%
+  as.data.frame() %>%
+  mutate(tukey = c("e","de","d","c","b","a"))
+str(r.r.tidy.1)
+
+r.r.tidy.2 <- dat.res %>%
+  group_by(rate.L) %>%
+  summarise(n=n(), mean=mean(mPa), 
+            se=sd(mPa)/sqrt(n)) %>%
+  as.data.frame() %>%
+  mutate(tukey = c("e","de","d","c","b","a"))
+r.r.tidy.2
+```
+
+
+
+## figure
+
+```{r}
+lm(mPa~rate.L,dat.res)
+lm(mPa~0+rate.L,dat.res)
+```
+
+
+```{r lm standard}
+dat.res %>%
+  ggplot(aes(rate.L,
+             mPa)) +
+  stat_summary(geom = "pointrange") +
+  geom_smooth(method = "lm") +
+  annotate("text", x = 4.5, y =2.1, 
+           label = expression(italic("y = 0.146x - 0.151"))) +
+  labs(y="Peak resistance (mPa)",
+       x=expression(paste("Hydromulch rate (L ", m^-2,")")))
+ggsave("resistance.png",dpi=350)
+```
+
+
+
+
+
+```{r}
+dat.res %>%
+  filter(rate.L>1 & rate.L<15) %>%
+  ggplot(aes(rate.L,
+             mPa)) +
+  stat_summary(geom = "pointrange") +
+  geom_smooth(method = "lm") +
+  facet_wrap(~run) +
+  labs(y="Peak resistance (mPa)",
+       x=expression(paste("Hydromulch rate (L ", m^-2,")")))
+```
+
+
+```{r}
+text.df <- as.dataframe("y=1x-0.15")
+
+```
+
+
+```{r}
+
+fig.1.3 <- ggplot(r.r.tidy.2, 
+       aes(x=rate.L,
+           y=mean)) +
+  geom_point(size=2) +
+  geom_linerange(aes(ymin=mean-se, ymax=mean+se), 
+                width=0.3,
+                alpha=.5,
+                size=1,
+                show.legend = F) +
+  geom_smooth(method = "lm", se=F,
+              color=cbp[1],
+              linetype=2) +
+  theme_classic() +
+  labs(y="Strength (mPa)",
+       x="") +       
+  scale_y_continuous(expand = c(0, 0), 
+                     limits = c(0, 3.5))+
+  scale_x_continuous(expand = c(0, 0), 
+                     limits = c(-.5, 22));fig.1.3
+
+```
+
+```{r eval=F}
+# r.r.tidy.2
+
+# xlabs <- c("Barnyardgrass", "Oat", "Pea")
+r.r.tidy.2$rate.L <- as.factor(r.r.tidy.2$rate.L)
+
+fig.bar <- ggplot(r.r.tidy.2, aes(x=rate.L,
+                                  fill=rate.L,
+                                  y=mean)) +
+  geom_errorbar(aes(ymin=mean-se, ymax=mean+se), 
+                width=0.5,
+                alpha=1,
+                size=1,
+                position = position_dodge(.8))+
+  geom_bar(stat = "identity", width=0.7, 
+           position = position_dodge(.8)) +
+  geom_text(aes(label=tukey,
+                y=mean+se),
+            position = position_dodge(.8),
+            vjust=-.4,
+            size=4)  +
+  scale_y_continuous(expand = c(0, 0), 
+                     limits = c(0, 4)) +
+    theme_classic() +
+  labs(y="Strength (mPa)",
+       x="Hydromulch application rate (L m-2)",
+       title="") +
+  scale_fill_manual(name="Application Rate",
+                    values=cbp, labels=c("0X", "0.25X", "0.5X", "0.75X", "1X", "1.5X"),
+                    guide=guide_legend());fig.bar
+
+# str(r.r.tidy.2)
+# r.r.tidy.2$rate.L <- as.factor(r.r.tidy.2$rate.L)
+```
+
+```{r}
+fig.emerge <- ggplot(e.r.tidy.2, 
+       aes(x=rate.L,
+           y=mean)) +
+  geom_line(aes(group=Species,color=Species)) +
+  geom_point(aes(shape=Species,color=Species),
+             position = position_dodge(0.19),
+             size=2) +
+  geom_linerange(aes(color=Species, group=Species,
+                         ymin=mean-se, ymax=mean+se), 
+                width=0.3,
+                alpha=.5,
+                size=1,
+                position=position_dodge(0.19),
+                show.legend = F) +
+  theme_classic() +
+  labs(y="Emergence (%)",
+       x="Application Rate (L m-2)") +       
+  scale_color_manual(values=cbp[6:8])+
+  scale_y_continuous(expand = c(0, 0), 
+                     limits = c(0, 100))+
+  scale_x_continuous(expand = c(0, 0), 
+                     limits = c(-.5, 22))+
+  theme(legend.position = c(.6, .8),
+    legend.justification = c("left", "top"),
+    legend.title = element_blank())
+fig.emerge
+```
+
+## NON-LINEAR
+
+```{r}
+# dat.res %>%
+#   # filter(rate.L<19)%>%
+#   # filter(rate.L<10)%>%
+#           ggplot( aes(x = rate.L,
+#                       y = mPa)) +
+#   # geom_point() +
+#   stat_summary(geom = "pointrange") +
+#   stat_smooth(
+#     method = "drm",
+#     method.args = list(
+#       fct = LL.4(names = c("hill", "min_value", "max_value", "ec_50"))
+#       ),
+#     se = F,
+#     ) +
+#   ylim(0, NA)
+# 
+# dat.res %>%
+#   # filter(rate.L<19)%>%
+#   # filter(rate.L<10)%>%
+#           ggplot( aes(x = rate.L,
+#                       y = mPa)) +
+#   # geom_point() +
+#   stat_summary(geom = "pointrange") +
+#   stat_smooth(
+#     method = "drm",
+#     method.args = list(
+#       fct = W2.4(names = c("hill", "min_value", "max_value", "ec_50"))
+#       ),
+#     se = F,
+#     ) +
+#   ylim(0, NA)
+
+dat.res %>%
+  group_by(rate.L) %>%
+  summarise(m=mean_se(mPa))
+
+dat.res %>%
+          ggplot( aes(x = rate.L,
+                      y = mPa)) +
+  # geom_point() +
+  stat_summary(geom = "pointrange") +
+  stat_smooth(
+    method = "drm",
+    method.args = list(
+      fct = LL.4(fixed=c(NA,0.0462,NA,NA),
+                 names = c("hill", "min_value", "max_value", "ec_50"))
+      ),se = F)
+
+dat.res %>%
+          ggplot( aes(x = rate.L,
+                      y = mPa)) +
+  # geom_point() +
+  stat_summary(geom = "pointrange") +
+  stat_smooth(
+    method = "drm",
+    method.args = list(
+      fct = LL.4(fixed=c(NA,0.0462,NA,NA),
+                 names = c("hill", "min_value", "max_value", "ec_50"))
+      ),se = F)
+```
+
+```{r}
+dat.res %>%
+  filter(rate.L<10)%>%
+          ggplot( aes(x = rate.L,
+                      y = mPa)) +
+  # geom_point() +
+  stat_summary(geom = "pointrange") +
+  stat_smooth(
+    method = "drm",
+    method.args = list(
+      fct = LL.4(fixed=c(NA,0,NA,NA),
+                 names = c("hill", "min_value", "max_value", "ec_50"))
+      ),se = F) 
+```
+
+
+
+```{r}
+
+dat.res %>%
+  ggplot(aes(rate.L,
+             mPa)) +
+  stat_summary(geom = "pointrange") +
+  geom_smooth(method = "lm",
+              se=F) +
+  stat_smooth(
+    method = "drm",
+    method.args = list(
+      fct = LL.4(fixed=c(NA,0.0462,NA,NA),
+                 names = c("hill", "min_value", "max_value", "ec_50"))),
+    se = F,
+    color="black",
+    linetype=3,
+    alpha=0.5) +
+  annotate("text", x = 4.5, y =2.1, 
+           label = expression(italic("y = 0.146x - 0.151"))) +
+  labs(y="Peak resistance (mPa)",
+       x=expression(paste("Hydromulch rate (L ", m^-2,")")))
+
+```
+
+
+
+# publication figures
+
+```{r}
+fig1.1<- dat.res %>%
+  ggplot(aes(rate.L,
+             mPa)) +
+  stat_summary(geom = "pointrange") +
+  geom_smooth(method = "lm",
+              formula = 'y~x+0',
+              se=F) +
+  annotate("text", x = 4.5, y =2.1, 
+           label = expression(italic("y = 0.132x"))) +
+  labs(y="Peak resistance (mPa)",
+       x="") +
+  scale_x_continuous(limits = c(0,20),
+                     expand = c(0.02,0))
+
+fig1.2 <- ggplot(dat.emerg, aes(x = rate.L,
+                      y = cum.emerg)) +
+  geom_point(aes(group=species,
+                 color=species,
+                 shape=species)) + 
+  geom_line(data=extrap.data.byg, 
+            aes(x=rate, y=p),
+            color=cbp[1]) + 
+  geom_line(data=extrap.data.oat, 
+            aes(x=rate, y=p),
+            color=cbp[2]) + 
+  geom_line(data=extrap.data.pea, 
+            aes(x=rate, y=p),
+            color=cbp[3])+
+  geom_ribbon(data=extrap.data.byg, 
+              aes(x=rate, 
+                  y=p,
+                  ymin=pmin,
+                  ymax=pmax),
+              alpha=0.1,
+              fill=cbp[1]) +
+  geom_ribbon(data=extrap.data.pea, 
+              aes(x=rate, 
+                  y=p,
+                  ymin=pmin,
+                  ymax=pmax),
+              alpha=0.1,
+              fill=cbp[3]) +
+  geom_ribbon(data=extrap.data.oat, 
+              aes(x=rate, 
+                  y=p,
+                  ymin=pmin,
+                  ymax=pmax),
+              alpha=0.1,
+              fill=cbp[2]) +
+  labs(x="Hydromulch rate (L m-2)",
+       y="Emergence (%)") +
+  theme(legend.title = element_blank(),
+        legend.position = c(.7,.7)) +
+  scale_shape_discrete(labels = c("Barnyardgrass","Oat","Pea")) +
+  scale_color_manual(values=cbp,
+                     labels = c("Barnyardgrass","Oat","Pea")) +
+  scale_x_continuous(limits = c(0,20),
+                     expand = c(0.02,0))
+
+ggarrange(fig1.1,fig1.2,
+          ncol = 1,
+          align = "v")
+ggsave("fig1.png",
+       width = 4.6,
+       height = 5,
+       units = "in",
+       dpi = 350)
+
+```
+
